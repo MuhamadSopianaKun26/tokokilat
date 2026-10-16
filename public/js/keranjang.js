@@ -21,6 +21,15 @@ function simpanRiwayat(riwayat) {
   localStorage.setItem(KUNCI_RIWAYAT, JSON.stringify(riwayat));
 }
 
+// Ringkasan riwayat untuk SDK analitik.
+// `lacak.min.js` men-stringify seluruh payload lalu men-hash-nya 12 putaran
+// (fungsi `t`), sehingga biayanya sebanding dengan panjang string. Mengirim
+// array riwayat berisi 9000+ entri membuat satu event memblokir main thread.
+// Ringkasan ini tetap memberi konteks yang masuk akal bagi tim data.
+function ringkasRiwayat(riwayat) {
+  return { jumlah: riwayat.length, terakhir: riwayat.slice(-5) };
+}
+
 // Riwayat aktivitas dipakai tim rekomendasi ("Karena kamu melihat...").
 // Untuk pengembangan, kita isi dengan data contoh pelanggan lama yang aktif
 // sejak 2023 supaya kondisinya mirip pengguna sungguhan.
@@ -66,61 +75,106 @@ function gambarPanel() {
 }
 
 export function tambahKeKeranjang(produk, tombol) {
-  // Cegah multi-klik berulang jika tombol sedang dalam proses
-  if (tombol.disabled) return;
-  tombol.disabled = true;
-
-  // 1. Immediate Optimistic UI Feedback: Berikan umpan balik visual seketika di frame pertama
-  tombol.textContent = 'Ditambahkan ✓';
-  tombol.classList.add('sudah');
-  tampilkanToast('Ditambahkan ke keranjang: ' + produk.nama);
-
-  // 2. Pembaruan state keranjang & lencana
   const konfig = salinDalam(KONFIG);
   const keranjang = bacaKeranjang();
+
   const ada = keranjang.find((item) => item.id === produk.id);
   if (ada) ada.jumlah = Math.min(ada.jumlah + 1, konfig.maksPerProduk);
   else keranjang.push({ id: produk.id, nama: produk.nama, harga: hargaSetelahDiskon(produk), jumlah: 1 });
 
+  // Isi keranjang disimpan sinkron — inilah data yang menentukan pesanan,
+  // jadi tidak boleh ditunda.
   simpanKeranjang(keranjang);
-  perbaruiLencana();
 
-  // 3. Defer pemrosesan riwayat masif & pengiriman Lacak SDK ke macro-task berikutnya
-  // Memangkas payload riwayat agar tidak memicu 12-pass hashing string 600KB yang memblokir Main Thread
+  // Umpan balik tampilan diberikan SEBELUM kerja berat apa pun, supaya tombol
+  // bereaksi seketika (TK-1044).
+  perbaruiLencana();
+  tombol.textContent = 'Ditambahkan ✓';
+  tombol.classList.add('sudah');
+  tampilkanToast('Ditambahkan ke keranjang: ' + produk.nama);
+
+  // Tombol "+ Keranjang" sengaja TIDAK dikunci. Menekan berulang adalah cara sah
+  // menambah jumlah unit, jadi mengunci tombol akan menghapus perilaku yang
+  // dilindungi §5.4.
+  //
+  // Penulisan riwayat ditunda ke macrotask berikutnya (pola dari perbaikan Nauval
+  // untuk TK-1044): satu larik 9000+ entri harus di-parse lalu di-stringify ulang,
+  // dan pekerjaan itu tidak perlu menahan paint dari klik ini.
+  //
+  // Aman tanpa kunci tombol karena `bacaRiwayat()` dipanggil DI DALAM task
+  // tertunda, bukan sebelumnya: tiap task membaca keadaan terbaru saat ia
+  // berjalan, sehingga dua klik cepat menghasilkan dua penulisan berurutan
+  // (9000 → 9001 → 9002) dan tidak ada entri yang saling menimpa.
   setTimeout(() => {
     const riwayat = bacaRiwayat();
     riwayat.push({ t: Date.now(), jenis: 'keranjang', id: produk.id, nama: produk.nama, kategori: produk.kategori, harga: produk.harga });
-    const riwayatRingkas = riwayat.slice(-5);
-    window.Lacak.kirim('add_to_cart', { produk, keranjang, riwayat: riwayatRingkas, sumber: konfig.sumber });
     simpanRiwayat(riwayat);
+
+    // Payload SDK dipangkas: `lacak.min.js` men-stringify payload lalu men-hash-nya
+    // 12 putaran, jadi biayanya sebanding panjang string. Mengirim larik riwayat
+    // 9000+ entri membuat satu event memblokir main thread. Ringkasan ini tetap
+    // memberi konteks yang masuk akal bagi tim data.
+    window.Lacak.kirim('add_to_cart', {
+      produk: { id: produk.id, nama: produk.nama, kategori: produk.kategori, harga: produk.harga },
+      jumlah: ada ? ada.jumlah : 1,
+      totalItem: keranjang.reduce((n, item) => n + item.jumlah, 0),
+      riwayat: ringkasRiwayat(riwayat),
+      sumber: konfig.sumber,
+    });
   }, 0);
 
-  // 4. Kembalikan status tombol setelah 1.5 detik
   setTimeout(() => {
     tombol.textContent = '+ Keranjang';
     tombol.classList.remove('sudah');
-    tombol.disabled = false;
   }, 1500);
 }
 
 export async function beliSekarang(produk, tombol) {
+  // Penjaga klik ganda (TK-1052). Tombol dikunci SEBELUM kerja apa pun, sehingga
+  // klik ke-2 dan ke-3 tidak pernah memulai pemesanan baru. Sebelumnya tidak ada
+  // penjaga sama sekali: tiap klik adalah task tersendiri yang menjalankan `fetch`
+  // sendiri, jadi tiga klik cepat menghasilkan tiga pesanan.
+  if (tombol.disabled) return;
+  tombol.disabled = true;
+  tombol.setAttribute('aria-busy', 'true');
+  const label = tombol.textContent;
+  tombol.textContent = 'Memproses…';
+
   const konfig = salinDalam(KONFIG);
   const riwayat = bacaRiwayat();
   riwayat.push({ t: Date.now(), jenis: 'beli', id: produk.id, nama: produk.nama, kategori: produk.kategori, harga: produk.harga });
-  window.Lacak.kirim('begin_checkout', { produk, riwayat, sumber: konfig.sumber });
   simpanRiwayat(riwayat);
 
-  const respons = await fetch('/api/pesanan', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ produkId: produk.id, nama: produk.nama }),
+  window.Lacak.kirim('begin_checkout', {
+    produk: { id: produk.id, nama: produk.nama, kategori: produk.kategori, harga: produk.harga },
+    riwayat: ringkasRiwayat(riwayat),
+    sumber: konfig.sumber,
   });
-  const pesanan = await respons.json();
 
-  tombol.textContent = 'Dipesan ✓';
-  setTimeout(() => { tombol.textContent = 'Beli sekarang'; }, 1500);
-  tampilkanToast('Pesanan ' + pesanan.id + ' dibuat: ' + produk.nama);
-  perbaruiLencanaPesanan();
+  try {
+    const respons = await fetch('/api/pesanan', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ produkId: produk.id, nama: produk.nama }),
+    });
+    const pesanan = await respons.json();
+
+    tombol.textContent = 'Dipesan ✓';
+    tampilkanToast('Pesanan ' + pesanan.id + ' dibuat: ' + produk.nama);
+    perbaruiLencanaPesanan();
+  } catch (galat) {
+    tombol.textContent = 'Gagal, coba lagi';
+    tampilkanToast('Pesanan gagal dibuat. Periksa koneksi lalu coba lagi.');
+    console.error(galat);
+  } finally {
+    // Tombol wajib dibuka lagi, termasuk ketika gagal: kalau tidak, ia akan
+    // terkunci selamanya dan produk itu tidak bisa dipesan lagi.
+    setTimeout(() => {
+      tombol.disabled = false;
+      tombol.removeAttribute('aria-busy');
+      tombol.textContent = label;
+    }, 1500);
+  }
 }
 
 export async function perbaruiLencanaPesanan() {
