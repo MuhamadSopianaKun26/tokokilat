@@ -66,31 +66,41 @@ function gambarPanel() {
 }
 
 export function tambahKeKeranjang(produk, tombol) {
+  // Cegah multi-klik berulang jika tombol sedang dalam proses
+  if (tombol.disabled) return;
+  tombol.disabled = true;
+
+  // 1. Immediate Optimistic UI Feedback: Berikan umpan balik visual seketika di frame pertama
+  tombol.textContent = 'Ditambahkan ✓';
+  tombol.classList.add('sudah');
+  tampilkanToast('Ditambahkan ke keranjang: ' + produk.nama);
+
+  // 2. Pembaruan state keranjang & lencana
   const konfig = salinDalam(KONFIG);
   const keranjang = bacaKeranjang();
-  const riwayat = bacaRiwayat();
-
   const ada = keranjang.find((item) => item.id === produk.id);
   if (ada) ada.jumlah = Math.min(ada.jumlah + 1, konfig.maksPerProduk);
   else keranjang.push({ id: produk.id, nama: produk.nama, harga: hargaSetelahDiskon(produk), jumlah: 1 });
 
-  riwayat.push({ t: Date.now(), jenis: 'keranjang', id: produk.id, nama: produk.nama, kategori: produk.kategori, harga: produk.harga });
-
-  // Tim data minta konteks selengkap mungkin di setiap event.
-  window.Lacak.kirim('add_to_cart', { produk, keranjang, riwayat, sumber: konfig.sumber });
-
   simpanKeranjang(keranjang);
-  simpanRiwayat(riwayat);
-
-  // Data sudah aman tersimpan, baru tampilan diperbarui.
   perbaruiLencana();
-  tombol.textContent = 'Ditambahkan ✓';
-  tombol.classList.add('sudah');
+
+  // 3. Defer pemrosesan riwayat masif & pengiriman Lacak SDK ke macro-task berikutnya
+  // Memangkas payload riwayat agar tidak memicu 12-pass hashing string 600KB yang memblokir Main Thread
+  setTimeout(() => {
+    const riwayat = bacaRiwayat();
+    riwayat.push({ t: Date.now(), jenis: 'keranjang', id: produk.id, nama: produk.nama, kategori: produk.kategori, harga: produk.harga });
+    const riwayatRingkas = riwayat.slice(-5);
+    window.Lacak.kirim('add_to_cart', { produk, keranjang, riwayat: riwayatRingkas, sumber: konfig.sumber });
+    simpanRiwayat(riwayat);
+  }, 0);
+
+  // 4. Kembalikan status tombol setelah 1.5 detik
   setTimeout(() => {
     tombol.textContent = '+ Keranjang';
     tombol.classList.remove('sudah');
+    tombol.disabled = false;
   }, 1500);
-  tampilkanToast('Ditambahkan ke keranjang: ' + produk.nama);
 }
 
 export async function beliSekarang(produk, tombol) {

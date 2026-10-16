@@ -42,7 +42,7 @@ function buatKartu(produk) {
   if (hargaVoucher) harga.append(el('span', 'harga-voucher', 'Pakai voucher: ' + formatRupiah(hargaVoucher)));
   badan.append(harga);
 
-  badan.append(el('div', 'keterangan', '★ ' + produk.rating.toLocaleString('id-ID') + ' | ' + formatRibuan(produk.terjual) + ' terjual'));
+  badan.append(el('div', 'keterangan', '★ ' + String(produk.rating).replace('.', ',') + ' | ' + formatRibuan(produk.terjual) + ' terjual'));
   badan.append(el('div', 'keterangan', produk.kota));
 
   const aksi = el('div', 'aksi');
@@ -59,37 +59,57 @@ function buatKartu(produk) {
   return kartu;
 }
 
-// Judul produk panjangnya beda-beda (1-3 baris). Supaya harga & tombol dalam
-// satu deret sejajar rapi, tinggi judul disamakan mengikuti judul tertinggi.
-// Mengukur semua judul terlalu lambat, jadi cukup ukur sebagian sebagai contoh.
-const JUMLAH_CONTOH = 24;
-
+// Judul produk panjangnya disamakan secara native menggunakan CSS
+// (.kartu-judul dengan line-clamp: 2 dan height: 2.7em) untuk mengeliminasi
+// Forced Synchronous Layout / Layout Thrashing sepenuhnya dari Main Thread.
 function samakanTinggiJudul() {
-  const judul = document.querySelectorAll('.kartu-judul');
-  let tertinggi = 0;
-  for (let i = 0; i < judul.length && i < JUMLAH_CONTOH; i++) {
-    const j = judul[i];
-    j.style.height = 'auto';
-    const tinggi = j.offsetHeight;
-    if (tinggi > tertinggi) tertinggi = tinggi;
-    j.style.height = tertinggi + 'px';
+  // Ditangani secara native via CSS murni
+}
+
+const UKURAN_BATCH = 36;
+let indeksMuat = 0;
+let daftarAktif = [];
+
+function muatBatchBerikutnya() {
+  if (indeksMuat >= daftarAktif.length) return false;
+  const kisi = $('#kisi');
+  const fragmen = document.createDocumentFragment();
+  const batas = Math.min(indeksMuat + UKURAN_BATCH, daftarAktif.length);
+  for (let i = indeksMuat; i < batas; i++) {
+    fragmen.append(buatKartu(daftarAktif[i]));
   }
-  judul.forEach((j) => { j.style.height = tertinggi + 'px'; });
+  kisi.append(fragmen);
+  indeksMuat = batas;
+  return true;
+}
+
+let terpasangGulirKatalog = false;
+function pasangGulirKatalog() {
+  if (terpasangGulirKatalog) return;
+  terpasangGulirKatalog = true;
+  window.addEventListener('scroll', () => {
+    if (window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 800) {
+      if (muatBatchBerikutnya()) {
+        periksaGulir();
+      }
+    }
+  }, { passive: true });
 }
 
 export function renderProduk(daftar) {
   const kisi = $('#kisi');
   keadaan.ditampilkan = daftar;
+  daftarAktif = daftar;
+  indeksMuat = 0;
   kisi.innerHTML = '';
 
   if (daftar.length === 0) {
     const kosong = el('div', 'kosong');
     kosong.append(el('strong', '', 'Produk tidak ditemukan.'), el('p', '', 'Periksa ejaan, atau coba kata kunci yang lebih umum seperti "sepatu" atau "serum".'));
     kisi.append(kosong);
-  }
-
-  for (const produk of daftar) {
-    kisi.append(buatKartu(produk));
+  } else {
+    muatBatchBerikutnya();
+    pasangGulirKatalog();
   }
 
   samakanTinggiJudul();

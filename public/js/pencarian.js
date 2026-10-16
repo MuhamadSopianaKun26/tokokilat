@@ -37,14 +37,22 @@ export function terapkanSaringan() {
   if (PEMBANDING[saringan.urut]) hasil = hasil.slice().sort(PEMBANDING[saringan.urut]);
   renderProduk(hasil);
 
-  if (window.Lacak && kunci) window.Lacak.kirim('search', { kata: saringan.kata, jumlah: hasil.length });
+  if (window.Lacak && kunci) {
+    setTimeout(() => {
+      window.Lacak.kirim('search', { kata: saringan.kata, jumlah: hasil.length });
+    }, 0);
+  }
 }
 
 export function pasangPencarian() {
   const kolom = $('#kolom-cari');
+  let penundaCari;
   kolom.addEventListener('input', () => {
     saringan.kata = kolom.value;
-    terapkanSaringan();
+    clearTimeout(penundaCari);
+    penundaCari = setTimeout(() => {
+      terapkanSaringan();
+    }, 150);
   });
 
   $('#pilih-urut').addEventListener('change', (e) => {
