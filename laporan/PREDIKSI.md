@@ -44,9 +44,15 @@ bagian "sebelum" setelah hasilnya diketahui; bila prediksi meleset, jelaskan di 
 ### Sesudah perbaikan
 
 - **Hash commit perbaikan:** [Andy bed84c3]
-- **Hasil ukur (median 3 kali):** ....
-- **Prediksi vs kenyataan:** ....
-- **Efek samping yang muncul:** ....
+- **Hasil ukur (median 3 kali):**
+  - **Skor CLS:** Turun dari **0,474** menjadi **0,292** (Percobaan 1: 0,292; Percobaan 2: 0,292; Percobaan 3: 0,292).
+  - **Node yang terdampak pergeseran:** Masih tercatat pergeseran pada `DIV class='alat-kanan'`, `FOOTER class='kaki'`, dan `P id='ringkasan' class='ringkasan'` pada saat banner promosi muncul.
+  - **Waktu pergeseran:** Terjadi pada saat respons `/api/promo` diterima dan disisipkan (antara detik ke-2,8 s.d. 9,9).
+- **Prediksi vs kenyataan:**
+  - **Sebagian / Meleset.** Prediksi awal memperkirakan skor CLS akan turun drastis hingga **0,00** (atau <= 0,02). Kenyataannya, perbaikan pada commit `bed84c3` hanya memangkas skor dari 0,474 menjadi 0,292 (~38% perbaikan), sehingga masih melampaui ambang batas target Core Web Vitals (<= 0,1).
+  - *Apa yang salah dari model mental?* Pencadangan ruang tata letak (*layout reservation*) yang disediakan pada struktur awal kontainer promosi belum presisi terhadap tinggi akhir elemen banner promosi yang dirender. Akibatnya, saat materi banner promosi selesai dimuat dan dimasukkan ke DOM, elemen tersebut tetap memicu pergeseran tata letak sisa (*residual layout displacement*) sebesar selisih dimensi antara placeholder dan banner asli, mendorong elemen-elemen di bawahnya ke bawah.
+- **Efek samping yang muncul:**
+  - Terdapat kotak kerangka/placeholder di bagian atas, namun karena dimensinya belum presisi dengan tinggi elemen banner yang sebenarnya, lonjakan tata letak vertikal masih terlihat dan terdeteksi oleh peramban saat banner selesai dimuat.
 
 ---
 
@@ -88,6 +94,13 @@ bagian "sebelum" setelah hasilnya diketahui; bila prediksi meleset, jelaskan di 
 ### Sesudah perbaikan
 
 - **Hash commit perbaikan:** [Andy bed84c3]
-- **Hasil ukur (median 3 kali):** ....
-- **Prediksi vs kenyataan:** ....
-- **Efek samping yang muncul:** ....
+- **Hasil ukur (median 3 kali):**
+  - **Jumlah permintaan gambar diinisiasi (10 detik pertama):** Turun dari **1500 permintaan** menjadi **811 permintaan** (Percobaan 1: 689; Percobaan 2: 811; Percobaan 3: 897).
+  - **Jumlah gambar selesai dalam 10 detik pertama:** Naik dari median 147 menjadi **284 gambar** (Percobaan 1: 293; Percobaan 2: 50; Percobaan 3: 284).
+  - **Gambar terakhir selesai dalam 10 detik pertama:** Median pada detik ke-**9,95** (Percobaan 1: 9,95 dtk; Percobaan 2: 9,67 dtk; Percobaan 3: 9,98 dtk).
+  - **Unduhan latar belakang:** Unduhan gambar masih terus aktif dan mengantre di latar belakang hingga detik ke-20 s.d. 32 (total selesai ~610–811 gambar).
+- **Prediksi vs kenyataan:**
+  - **Sebagian / Meleset.** Prediksi awal memperkirakan jumlah inisiasi gambar awal akan turun drastis hingga **6–12 permintaan** (sebanding dengan jumlah produk di viewport awal 412x915). Kenyataannya, peramban masih menginisiasi ratusan permintaan (median 811 permintaan gambar).
+  - *Apa yang salah dari model mental?* Penambahan atribut `loading="lazy"` pada elemen kartu produk tidak serta-merta membatasi unduhan hanya pada kartu yang berada di viewport awal apabila seluruh 1500 elemen kartu dimasukkan ke DOM sekaligus tanpa dimensi (tinggi) yang eksplisit sebelum tahap *Style & Layout* selesai dihitung. Pada siklus pemuatan awal, sebelum peramban menyelesaikan kalkulasi geometri posisi tiap elemen, kartu-kartu produk dianggap menumpuk di koordinat Y teratas atau masuk dalam margin ambang pramuat (*lazy load pre-load intersection margin* Chromium yang cukup lebar, ~1250px). Hal ini menyebabkan peramban tetap mengantrekan ratusan permintaan gambar ke jaringan sebelum pembatasan viewport bekerja efektif.
+- **Efek samping yang muncul:**
+  - Meskipun beban inisiasi terpangkas hampir separuh (dari 1500 menjadi 811), saturasi antrean koneksi (*network contention*) tetap terjadi di fase awal sehingga pemuatan gambar kartu di viewport atas masih harus bersaing dengan ratusan gambar kartu di bawahnya.
