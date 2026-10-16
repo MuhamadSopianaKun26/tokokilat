@@ -14,32 +14,29 @@ const duaDigit = (n) => String(n).padStart(2, '0');
 function pasangHitungMundur() {
   const akhir = akhirFlashSale();
   const awal = Date.now();
-  const wadah = $('#hitung-mundur');
   const garis = $('#hm-garis');
   const jam = $('#hm-jam'), menit = $('#hm-menit'), detik = $('#hm-detik'), senti = $('#hm-senti');
 
-  // 10 ms supaya angka perseratus detik terlihat mulus
-  setInterval(() => {
+  function perbarui() {
     const sisa = Math.max(akhir - Date.now(), 0);
     jam.textContent = duaDigit(Math.floor(sisa / 3600000));
     menit.textContent = duaDigit(Math.floor((sisa % 3600000) / 60000));
     detik.textContent = duaDigit(Math.floor((sisa % 60000) / 1000));
-    senti.textContent = duaDigit(Math.floor((sisa % 1000) / 10));
+    senti.textContent = '00';
 
-    // garis di bawah angka menyusut mengikuti sisa waktu
-    const lebarPenuh = wadah.offsetWidth;
-    garis.style.width = Math.round(lebarPenuh * (sisa / (akhir - awal + 1))) + 'px';
-  }, 10);
+    // Garis menyusut proporsional dengan persentase lebar tanpa memicu forced layout offsetWidth
+    const rasio = Math.max(0, Math.min(1, sisa / (akhir - awal + 1)));
+    if (garis) garis.style.width = (rasio * 100).toFixed(2) + '%';
+  }
+
+  // Pembaruan awal dan interval 1000 ms agar Main Thread benar-benar menganggur saat halaman diam (S6)
+  perbarui();
+  setInterval(perbarui, 1000);
 }
 
 function pasangTeksBerjalan() {
-  const teks = $('#berjalan-teks');
-  let x = teks.parentElement.offsetWidth;
-  setInterval(() => {
-    x -= 1;
-    if (x < -teks.offsetWidth) x = teks.parentElement.offsetWidth;
-    teks.style.left = x + 'px';
-  }, 10);
+  // Animasi teks berjalan didelegasikan ke CSS @keyframes dengan properti transform (GPU Compositor Thread)
+  // guna mengeliminasi eksekusi JavaScript timer 10ms dan tahapan layout/paint di Main Thread saat diam (S6).
 }
 
 async function pasangBannerPromo() {
