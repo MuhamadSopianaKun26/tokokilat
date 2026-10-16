@@ -4,6 +4,8 @@ import { $, el, hargaSetelahDiskon } from './util.js';
 import { keadaan, renderProduk } from './katalog.js';
 
 const saringan = { kata: '', kategori: 'Semua', urut: 'relevan' };
+const teksPencarian = new WeakMap();
+let pengaturLacak;
 
 // "Sepatu Lari" == "sepatu  lari" == "SEPATU-LARI"
 function normalkan(teks) {
@@ -16,7 +18,11 @@ function normalkan(teks) {
 }
 
 function cocok(produk, kunci) {
-  const teks = normalkan(produk.nama + ' ' + produk.merek + ' ' + produk.kategori + ' ' + produk.kota);
+  let teks = teksPencarian.get(produk);
+  if (!teks) {
+    teks = normalkan(produk.nama + ' ' + produk.merek + ' ' + produk.kategori + ' ' + produk.kota);
+    teksPencarian.set(produk, teks);
+  }
   return kunci.split(' ').every((k) => teks.includes(k));
 }
 
@@ -37,7 +43,11 @@ export function terapkanSaringan() {
   if (PEMBANDING[saringan.urut]) hasil = hasil.slice().sort(PEMBANDING[saringan.urut]);
   renderProduk(hasil);
 
-  if (window.Lacak && kunci) window.Lacak.kirim('search', { kata: saringan.kata, jumlah: hasil.length });
+  if (window.Lacak && kunci) {
+    const data = { kata: saringan.kata, jumlah: hasil.length };
+    clearTimeout(pengaturLacak);
+    pengaturLacak = setTimeout(() => window.Lacak.kirim('search', data), 250);
+  }
 }
 
 export function pasangPencarian() {

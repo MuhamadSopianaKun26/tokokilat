@@ -76,13 +76,10 @@ export function tambahKeKeranjang(produk, tombol) {
 
   riwayat.push({ t: Date.now(), jenis: 'keranjang', id: produk.id, nama: produk.nama, kategori: produk.kategori, harga: produk.harga });
 
-  // Tim data minta konteks selengkap mungkin di setiap event.
-  window.Lacak.kirim('add_to_cart', { produk, keranjang, riwayat, sumber: konfig.sumber });
-
   simpanKeranjang(keranjang);
   simpanRiwayat(riwayat);
 
-  // Data sudah aman tersimpan, baru tampilan diperbarui.
+  // Simpan dan beri umpan balik sebelum pekerjaan analitik yang sinkron.
   perbaruiLencana();
   tombol.textContent = 'Ditambahkan ✓';
   tombol.classList.add('sudah');
@@ -91,6 +88,12 @@ export function tambahKeKeranjang(produk, tombol) {
     tombol.classList.remove('sudah');
   }, 1500);
   tampilkanToast('Ditambahkan ke keranjang: ' + produk.nama);
+
+  // SDK vendor melakukan komputasi sinkron; jangan menahan event klik.
+  if (window.Lacak) {
+    const data = { produk, keranjang, riwayat, sumber: konfig.sumber };
+    setTimeout(() => window.Lacak.kirim('add_to_cart', data), 0);
+  }
 }
 
 export async function beliSekarang(produk, tombol) {

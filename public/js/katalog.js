@@ -81,16 +81,18 @@ export function renderProduk(daftar) {
   const kisi = $('#kisi');
   keadaan.ditampilkan = daftar;
   kisi.innerHTML = '';
+  const fragmen = document.createDocumentFragment();
 
   if (daftar.length === 0) {
     const kosong = el('div', 'kosong');
     kosong.append(el('strong', '', 'Produk tidak ditemukan.'), el('p', '', 'Periksa ejaan, atau coba kata kunci yang lebih umum seperti "sepatu" atau "serum".'));
-    kisi.append(kosong);
+    fragmen.append(kosong);
   }
 
   for (const produk of daftar) {
-    kisi.append(buatKartu(produk));
+    fragmen.append(buatKartu(produk));
   }
+  kisi.append(fragmen);
 
   samakanTinggiJudul();
   $('#ringkasan').textContent = daftar.length.toLocaleString('id-ID') + ' produk ditampilkan';
