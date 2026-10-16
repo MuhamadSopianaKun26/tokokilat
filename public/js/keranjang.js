@@ -77,40 +77,56 @@ function gambarPanel() {
 export function tambahKeKeranjang(produk, tombol) {
   const konfig = salinDalam(KONFIG);
   const keranjang = bacaKeranjang();
-  const riwayat = bacaRiwayat();
 
   const ada = keranjang.find((item) => item.id === produk.id);
   if (ada) ada.jumlah = Math.min(ada.jumlah + 1, konfig.maksPerProduk);
   else keranjang.push({ id: produk.id, nama: produk.nama, harga: hargaSetelahDiskon(produk), jumlah: 1 });
 
-  riwayat.push({ t: Date.now(), jenis: 'keranjang', id: produk.id, nama: produk.nama, kategori: produk.kategori, harga: produk.harga });
-
+  // Isi keranjang disimpan sinkron — inilah data yang menentukan pesanan,
+  // jadi tidak boleh ditunda.
   simpanKeranjang(keranjang);
-  simpanRiwayat(riwayat);
 
-  // Data sudah aman tersimpan, baru tampilan diperbarui. Umpan balik diberikan
-  // SEBELUM memanggil SDK: dulu `Lacak.kirim` berjalan lebih dulu dengan seluruh
-  // riwayat, sehingga satu task memblokir main thread dan pengguna tidak melihat
-  // reaksi apa pun sampai pekerjaan itu selesai (TK-1044).
+  // Umpan balik tampilan diberikan SEBELUM kerja berat apa pun, supaya tombol
+  // bereaksi seketika (TK-1044).
   perbaruiLencana();
   tombol.textContent = 'Ditambahkan ✓';
   tombol.classList.add('sudah');
+  tampilkanToast('Ditambahkan ke keranjang: ' + produk.nama);
+
+  // Tombol "+ Keranjang" sengaja TIDAK dikunci. Menekan berulang adalah cara sah
+  // menambah jumlah unit, jadi mengunci tombol akan menghapus perilaku yang
+  // dilindungi §5.4.
+  //
+  // Penulisan riwayat ditunda ke macrotask berikutnya (pola dari perbaikan Nauval
+  // untuk TK-1044): satu larik 9000+ entri harus di-parse lalu di-stringify ulang,
+  // dan pekerjaan itu tidak perlu menahan paint dari klik ini.
+  //
+  // Aman tanpa kunci tombol karena `bacaRiwayat()` dipanggil DI DALAM task
+  // tertunda, bukan sebelumnya: tiap task membaca keadaan terbaru saat ia
+  // berjalan, sehingga dua klik cepat menghasilkan dua penulisan berurutan
+  // (9000 → 9001 → 9002) dan tidak ada entri yang saling menimpa.
+  setTimeout(() => {
+    const riwayat = bacaRiwayat();
+    riwayat.push({ t: Date.now(), jenis: 'keranjang', id: produk.id, nama: produk.nama, kategori: produk.kategori, harga: produk.harga });
+    simpanRiwayat(riwayat);
+
+    // Payload SDK dipangkas: `lacak.min.js` men-stringify payload lalu men-hash-nya
+    // 12 putaran, jadi biayanya sebanding panjang string. Mengirim larik riwayat
+    // 9000+ entri membuat satu event memblokir main thread. Ringkasan ini tetap
+    // memberi konteks yang masuk akal bagi tim data.
+    window.Lacak.kirim('add_to_cart', {
+      produk: { id: produk.id, nama: produk.nama, kategori: produk.kategori, harga: produk.harga },
+      jumlah: ada ? ada.jumlah : 1,
+      totalItem: keranjang.reduce((n, item) => n + item.jumlah, 0),
+      riwayat: ringkasRiwayat(riwayat),
+      sumber: konfig.sumber,
+    });
+  }, 0);
+
   setTimeout(() => {
     tombol.textContent = '+ Keranjang';
     tombol.classList.remove('sudah');
   }, 1500);
-  tampilkanToast('Ditambahkan ke keranjang: ' + produk.nama);
-
-  // Tim data minta konteks selengkap mungkin di setiap event. Yang dikirim tetap
-  // informatif (produk, jumlah, ukuran keranjang, uraian riwayat, sumber), tetapi
-  // tidak lagi menyalin seluruh array riwayat yang panjangnya ribuan entri.
-  window.Lacak.kirim('add_to_cart', {
-    produk: { id: produk.id, nama: produk.nama, kategori: produk.kategori, harga: produk.harga },
-    jumlah: ada ? ada.jumlah : 1,
-    totalItem: keranjang.reduce((n, item) => n + item.jumlah, 0),
-    riwayat: ringkasRiwayat(riwayat),
-    sumber: konfig.sumber,
-  });
 }
 
 export async function beliSekarang(produk, tombol) {
