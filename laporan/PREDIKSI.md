@@ -9,7 +9,7 @@ bagian "sebelum" setelah hasilnya diketahui; bila prediksi meleset, jelaskan di 
 ## P-01: Pergeseran Tata Letak (Cumulative Layout Shift) Akibat Pemasangan Banner Promo Asinkron
 
 **Tiket terkait:** TK-1078
-**Tanggal dan hash commit entri ini:** 15 Oktober 2026
+**Tanggal dan hash commit entri ini:** 15 Oktober 2026 [Andy 210c19a]
 
 ### Sebelum perbaikan
 
@@ -43,7 +43,7 @@ bagian "sebelum" setelah hasilnya diketahui; bila prediksi meleset, jelaskan di 
 
 ### Sesudah perbaikan
 
-- **Hash commit perbaikan:** ....
+- **Hash commit perbaikan:** [Andy bed84c3]
 - **Hasil ukur (median 3 kali):** ....
 - **Prediksi vs kenyataan:** ....
 - **Efek samping yang muncul:** ....
@@ -53,7 +53,7 @@ bagian "sebelum" setelah hasilnya diketahui; bila prediksi meleset, jelaskan di 
 ## P-02: Pemborosan Kuota Jaringan dan Pemuatan Gambar Terhambat Akibat *Eager Loading* Seluruh Produk
 
 **Tiket terkait:** TK-1081
-**Tanggal dan hash commit entri ini:** 15 Oktober 2026
+**Tanggal dan hash commit entri ini:** 15 Oktober 2026 [Andy 210c19a]
 
 ### Sebelum perbaikan
 
@@ -87,7 +87,7 @@ bagian "sebelum" setelah hasilnya diketahui; bila prediksi meleset, jelaskan di 
 
 ### Sesudah perbaikan
 
-- **Hash commit perbaikan:** ....
+- **Hash commit perbaikan:** [Andy bed84c3]
 - **Hasil ukur (median 3 kali):** ....
 - **Prediksi vs kenyataan:** ....
 - **Efek samping yang muncul:** ....
