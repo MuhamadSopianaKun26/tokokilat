@@ -6,8 +6,8 @@
   "type": "commonjs",
   "scripts": {
     "start": "node server.js",
-    "start:ringan": "node -e \"process.env.JUMLAH_PRODUK='1500'; require('./server.js')\"",
-    "start:berat": "node -e \"process.env.JUMLAH_PRODUK='5000'; require('./server.js')\""
+    "start:ringan": "JUMLAH_PRODUK=1500 node server.js",
+    "start:berat": "JUMLAH_PRODUK=5000 node server.js"
   },
   "engines": { "node": ">=18" }
 }

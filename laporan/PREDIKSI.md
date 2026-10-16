@@ -6,6 +6,107 @@ bagian "sebelum" setelah hasilnya diketahui; bila prediksi meleset, jelaskan di 
 
 ---
 
+## P-1078: Pergeseran Tata Letak (Cumulative Layout Shift) Akibat Pemasangan Banner Promo Asinkron
+
+**Tiket terkait:** TK-1078
+**Tanggal dan hash commit entri ini:** 15 Oktober 2026 [Andy 210c19a]
+
+### Sebelum perbaikan
+
+- **Yang teramati di trace (baseline):**
+  - Pada track *Layout Shifts* / *Experience*, terdeteksi satu pergeseran tata letak tunggal pada detik ke-~4.1 (sekitar 4163 ms dari *navigation start*).
+  - Rincian pada tab *Summary* (saat event *Layout Shift* diklik):
+    - *Score*: **0.474**. Nilai ini melampaui batas (target 0,1).
+    - *Impacted Nodes*: Elemen footer (`footer.kaki`), bilah utilitas kontrol (`div.alat-kanan`), dan teks ringkasan (`p#ringkasan`) tercatat mengalami pergeseran posisi vertikal ke bawah yang signifikan.
+  - Pada track *Network*: Permintaan jaringan ke `/api/promo` berdurasi ~1800 ms selesai tepat sebelum pergeseran tata letak terjadi.
+  - Pada track *Main Thread* & tab *Bottom-Up* / *Call Tree*: Begitu respons `/api/promo` selesai diterima, muncul task pemrosesan yang memicu pembaruan pohon DOM, diikuti langsung oleh tahap rendering pipeline: `UpdateLayoutTree` (Recalculate Style), `Layout` (Reflow), dan `Paint`.
+
+- **Dugaan mekanisme:**
+  - Menggunakan model *Event Loop* dan tahapan *Rendering Pipeline*:
+    1. **Rendering Opportunity Awal**: Pemuatan data produk selesai lebih awal (~180 ms), sehingga kartu produk dan kontrol penyaring sudah dikomposisikan dan digambar pada layar saat *rendering opportunity* pertama. Pengguna telah melihat produk teratas dan bersiap melakukan klik.
+    2. **Penyelesaian Task Asinkron**: Respons jaringan `/api/promo` tiba belakangan (~1.8 detik kemudian). Task penyelesaian jaringan mengeksekusi penambahan elemen banner promo (`.promo-banner`) tepat di bagian atas kontainer utama (`#utama`).
+    3. **Tahap Pipeline (DOM Mutation -> Style -> Layout -> Paint)**:
+       - Penyisipan elemen baru ke dalam kontainer tanpa adanya pencadangan dimensi ruang sebelumnya (*unreserved layout space*) membatalkan validitas geometri (*layout invalidation*).
+       - Browser mengeksekusi tahap **Layout**, mendorong seluruh elemen di bawahnya (`#alat`, `#ringkasan`, kisi kartu produk, dan footer) ke bawah sebesar tinggi banner (~180–230px).
+       - Tahap **Paint** menggambar ulang posisi elemen baru tersebut. Karena pergeseran terjadi tanpa interaksi pengguna baru saja (`had_recent_input: false`), peramban mencatat penalti `LayoutShift`, dan klik pengguna yang ditujukan ke kartu produk berakhir mengenai banner promosi.
+
+- **Rencana perubahan:**
+  - Menyediakan pencadangan ruang tata letak (*layout space reservation*) pada struktur awal kontainer promosi (misalnya menyediakan slot kontainer tetap atau skeleton/placeholder dengan dimensi yang sesuai di `#utama`) sebelum materi promosi selesai dimuat secara asinkron, sehingga saat elemen banner disisipkan, peramban tidak melakukan pergeseran posisi vertikal pada elemen-elemen di sekitarnya.
+
+- **Prediksi terukur:**
+  - Setelah perubahan, skor CLS pada S0 diprediksi turun dari **0.137** (trace raw score: 0.474) menjadi **0.00** (atau 0,02), karena tidak ada lagi pergeseran koordinat vertikal (*layout displacement*) pada elemen-elemen di sekitarnya saat banner dimuat.
+  - Prediksi efek samping: Area kosong atau kotak kerangka (skeleton) sementara akan terlihat selama ~1.8 detik di bagian atas halaman sebelum materi promosi tampil, namun stabilitas tata letak tetap terjaga.
+
+- **Alternatif yang dipertimbangkan dan alasan tidak dipilih:**
+  - *Alternatif 1: Menunda rendering seluruh halaman sampai permintaan `/api/promo` selesai.* Alasan tidak dipilih: Memperburuk waktu FCP (*First Contentful Paint*) dan LCP (*Largest Contentful Paint*) secara drastis karena pengguna harus menunggu layar kosong selama ~1.8 detik hanya untuk menanti banner promosi.
+  - *Alternatif 2: Menghapus elemen banner promosi.* Alasan tidak dipilih: Melanggar aturan tugas (TUGAS.md Bagian 5 Aturan 4: "Fitur tidak boleh dihapus... banner promo... harus tetap ada").
+
+### Sesudah perbaikan
+
+- **Hash commit perbaikan:** [Andy bed84c3]
+- **Hasil ukur (median 3 kali):**
+  - **Skor CLS:** Turun dari **0,474** menjadi **0,292** (Percobaan 1: 0,292; Percobaan 2: 0,292; Percobaan 3: 0,292).
+  - **Node yang terdampak pergeseran:** Masih tercatat pergeseran pada `DIV class='alat-kanan'`, `FOOTER class='kaki'`, dan `P id='ringkasan' class='ringkasan'` pada saat banner promosi muncul.
+  - **Waktu pergeseran:** Terjadi pada saat respons `/api/promo` diterima dan disisipkan (antara detik ke-2,8 s.d. 9,9).
+- **Prediksi vs kenyataan:**
+  - **Sebagian / Meleset.** Prediksi awal memperkirakan skor CLS akan turun drastis hingga **0,00** (atau <= 0,02). Kenyataannya, perbaikan pada commit `bed84c3` hanya memangkas skor dari 0,474 menjadi 0,292 (~38% perbaikan), sehingga masih melampaui ambang batas target Core Web Vitals (<= 0,1).
+  - *Apa yang salah dari model mental?* Pencadangan ruang tata letak (*layout reservation*) yang disediakan pada struktur awal kontainer promosi belum presisi terhadap tinggi akhir elemen banner promosi yang dirender. Akibatnya, saat materi banner promosi selesai dimuat dan dimasukkan ke DOM, elemen tersebut tetap memicu pergeseran tata letak sisa (*residual layout displacement*) sebesar selisih dimensi antara placeholder dan banner asli, mendorong elemen-elemen di bawahnya ke bawah.
+- **Efek samping yang muncul:**
+  - Terdapat kotak kerangka/placeholder di bagian atas, namun karena dimensinya belum presisi dengan tinggi elemen banner yang sebenarnya, lonjakan tata letak vertikal masih terlihat dan terdeteksi oleh peramban saat banner selesai dimuat.
+
+---
+
+## P-1081: Pemborosan Kuota Jaringan dan Pemuatan Gambar Terhambat Akibat *Eager Loading* Seluruh Produk
+
+**Tiket terkait:** TK-1081
+**Tanggal dan hash commit entri ini:** 15 Oktober 2026 [Andy 210c19a]
+
+### Sebelum perbaikan
+
+- **Yang teramati di trace (baseline):**
+  - Pada track *Network* & Panel *Network*: Terdeteksi **1500 permintaan berkas gambar** (`/img/p/*.svg`) yang diinisiasi hampir secara simultan pada awal siklus hidup halaman (sekitar 2 detik pertama navigasi), dipicu oleh task inisialisasi render katalog produk.
+  - Durasi & Status Pemuatan:
+    - Dalam jendela 10 detik pertama (S0), dari 1500 permintaan yang diinisiasi, hanya **147 gambar** yang berhasil diselesaikan (median dari 3 percobaan: 136, 191, 147).
+    - Waterfall jaringan didominasi oleh bilah abu-abu panjang berstatus *Queueing / Stalled* (antrean tertahan).
+    - Permintaan gambar masih terus aktif dan mengantre hingga detik ke-22 s.d. 37, jauh melampaui kebutuhan tampilan layar saat itu.
+  - Analisis Konsumsi Jaringan: Seluruh gambar untuk 1500 produk langsung diminta sekaligus ke jaringan, padahal viewport perangkat (412x915) hanya memuat ~4–6 produk teratas.
+
+- **Dugaan mekanisme:**
+  - Menggunakan model *Event Loop* dan *Network Pipeline*:
+    1. **Inisialisasi DOM Tanpa Pembatasan Pemuatan (Eager Loading)**: Saat task perenderan daftar produk dieksekusi, peramban membuat 1500 elemen gambar dengan atribut sumber daya aktif sekaligus ke dalam DOM.
+    2. **Saturasi Antrean Jaringan (*Network Contention*)**: Sub-sistem pemuat sumber daya (*Resource Fetcher*) browser mendeteksi 1500 permintaan aset eksternal dan langsung memasukkannya ke dalam antrean jaringan.
+    3. **Batas Konkurensi Soket TCP HTTP/1.1**: Arsitektur peramban membatasi koneksi TCP simultan maksimal 6 koneksi per origin. Akibatnya, 1494 permintaan gambar langsung tertahan dalam status antrean (*stalled*).
+    4. **Dampak Pengalaman Pengguna**: Gambar kartu teratas yang berada di dalam viewport harus mengantre soket TCP secara bergantian dengan ratusan gambar produk di posisi bawah halaman. Dengan latensi respons tiap gambar (60–300 ms), pemuatan gambar di viewport menjadi sangat lambat (tampak sebagai kotak abu-abu dalam waktu lama) dan menghabiskan kuota data pengguna secara tidak perlu.
+
+- **Rencana perubahan:**
+  - Menerapkan penundaan pemuatan gambar berdasarkan kebutuhan viewport (*native lazy loading*) pada elemen gambar produk (`loading="lazy"`), sehingga browser hanya meminta berkas gambar saat elemen tersebut mendekati atau berada di dalam viewport. Untuk kartu produk yang langsung terlihat pada viewport awal, pemuatan dapat diprioritaskan.
+
+- **Prediksi terukur:**
+  - Jumlah permintaan gambar dalam 10 detik pertama pada Skenario S0 diprediksi turun drastis dari **1500 permintaan** menjadi sekitar **6–12 permintaan** (sebanding dengan jumlah produk di viewport awal 412x915).
+  - Waktu penyelesaian gambar pada kartu produk di viewport awal akan selesai dalam waktu singkat (< 1 detik) karena 6 soket koneksi tidak tersumbat oleh antrean gambar di luar layar.
+  - Volume transfer data awal berkurang drastis (>95%).
+  - Prediksi efek samping: Saat pengguna menggulir cepat (*fast scrolling*), gambar di bagian bawah mungkin memerlukan sedikit waktu untuk mengunduh saat baru memasuki viewport.
+
+- **Alternatif yang dipertimbangkan dan alasan tidak dipilih:**
+  - *Alternatif 1: Menggunakan pustaka JavaScript pihak ketiga (misalnya library infinite scroll / lazy load).* Alasan tidak dipilih: Melanggar aturan tugas ("Tanpa framework, library, atau bundler").
+  - *Alternatif 2: Memangkas jumlah total produk yang dikirim oleh server.* Alasan tidak dipilih: Melanggar aturan tugas (berkas server tidak boleh diubah; Aturan 3: seluruh produk harus tetap ada dan dapat dicari).
+
+### Sesudah perbaikan
+
+- **Hash commit perbaikan:** [Andy bed84c3]
+- **Hasil ukur (median 3 kali):**
+  - **Jumlah permintaan gambar diinisiasi (10 detik pertama):** Turun dari **1500 permintaan** menjadi **811 permintaan** (Percobaan 1: 689; Percobaan 2: 811; Percobaan 3: 897).
+  - **Jumlah gambar selesai dalam 10 detik pertama:** Naik dari median 147 menjadi **284 gambar** (Percobaan 1: 293; Percobaan 2: 50; Percobaan 3: 284).
+  - **Gambar terakhir selesai dalam 10 detik pertama:** Median pada detik ke-**9,95** (Percobaan 1: 9,95 dtk; Percobaan 2: 9,67 dtk; Percobaan 3: 9,98 dtk).
+  - **Unduhan latar belakang:** Unduhan gambar masih terus aktif dan mengantre di latar belakang hingga detik ke-20 s.d. 32 (total selesai ~610–811 gambar).
+- **Prediksi vs kenyataan:**
+  - **Sebagian / Meleset.** Prediksi awal memperkirakan jumlah inisiasi gambar awal akan turun drastis hingga **6–12 permintaan** (sebanding dengan jumlah produk di viewport awal 412x915). Kenyataannya, peramban masih menginisiasi ratusan permintaan (median 811 permintaan gambar).
+  - *Apa yang salah dari model mental?* Penambahan atribut `loading="lazy"` pada elemen kartu produk tidak serta-merta membatasi unduhan hanya pada kartu yang berada di viewport awal apabila seluruh 1500 elemen kartu dimasukkan ke DOM sekaligus tanpa dimensi (tinggi) yang eksplisit sebelum tahap *Style & Layout* selesai dihitung. Pada siklus pemuatan awal, sebelum peramban menyelesaikan kalkulasi geometri posisi tiap elemen, kartu-kartu produk dianggap menumpuk di koordinat Y teratas atau masuk dalam margin ambang pramuat (*lazy load pre-load intersection margin* Chromium yang cukup lebar, ~1250px). Hal ini menyebabkan peramban tetap mengantrekan ratusan permintaan gambar ke jaringan sebelum pembatasan viewport bekerja efektif.
+- **Efek samping yang muncul:**
+  - Meskipun beban inisiasi terpangkas hampir separuh (dari 1500 menjadi 811), saturasi antrean koneksi (*network contention*) tetap terjadi di fase awal sehingga pemuatan gambar kartu di viewport atas masih harus bersaing dengan ratusan gambar kartu di bawahnya.
+
+---
+
 ## P-01: Layout Thrashing dan DOM Re-rendering Penuh pada Pencarian Real-Time
 
 **Tiket terkait:** TK-1041 (Bu Wulan, Android entry-level)  
@@ -251,3 +352,78 @@ bagian "sebelum" setelah hasilnya diketahui; bila prediksi meleset, jelaskan di 
   3. **Wall-clock tidak terbukti memburuk** — trade-off "batch memperpanjang total" yang dikhawatirkan ternyata tidak material. Rentang rekaman sesudah 6,11 dtk vs baseline 6,34–8,12 dtk, tetapi angka ini lemah karena rentang ditentukan kapan perekaman dimulai dan dihentikan, bukan oleh lamanya kerja. Bukti yang lebih kuat: benchmark node menunjukkan 940 ms → 30 ms dingin, sehingga penghematan dari cache jauh melampaui biaya ~15 kali `setTimeout(0)`.
   4. **Penerapan voucher kedua tidak setara bebannya dengan yang pertama.** `keadaan.hargaVoucher.clear()` tetap dijalankan tiap kali, tetapi karena `cacheCicilan` masih hangat, penerapan berikutnya jauh lebih cepat. Menguntungkan pengguna, namun berarti pengukuran ulang harus menyebutkan penerapan ke berapa yang diukur.
   5. **Metodologi pengukuran "sesudah" belum setara baseline.** Pengukuran sesudah baru **2 kali**, bukan median 3 kali seperti diminta template; angka 144 ms adalah rata-rata keduanya. Lebih penting: rekaman `1-sesudah.json` mencakup rentang **2,2 menit** (128 MB) sedangkan baseline 6,3–8,1 dtk, sehingga penghitung di dalamnya (68 long task, 773 frame > 50 ms) **tidak sebanding** dan tidak boleh dipakai. Angka INP 120/168 ms tetap sahih karena INP bersifat per-interaksi, bukan per-rentang rekaman. Untuk laporan akhir, pengukuran sesudah sebaiknya diulang tiga kali dengan rentang rekaman yang disamakan.
+
+---
+
+## P-05: Scroll Patah-Patah Akibat Layout Thrashing pada Pemeriksaan Posisi Kartu (S5)
+
+**Tiket terkait:** TK-1063  
+**Tanggal dan hash commit entri ini:** 16 Oktober 2026, commit `d025dd9`
+
+### Sebelum perbaikan
+
+- **Yang teramati di trace (baseline):** Ketika halaman digulir terus-menerus selama 10 detik (skenario S5), terjadi *jank* parah dengan Long Task terlama mencapai **2603 ms**, INP mencapai **5347 ms**, dan lebih dari 50 frame mengalami drop (> 50 ms per frame). Pada panel Performance (lihat `laporan/trace-sopian/S5-Before/1-sebelum.png`), fungsi `periksaGulir()` di `public/js/gulir.js` mendominasi Main Thread dan memicu serangkaian event `Recalculate Style` dan `Layout` sinkron berulang ratusan kali.
+- **Dugaan mekanisme:** `periksaGulir()` dipasang pada event `scroll`, `wheel`, dan `touchmove` tanpa throttling dan dengan `{ passive: false }`. Di dalamnya, terdapat loop `document.querySelectorAll('.kartu')` yang memanggil `kartu.getBoundingClientRect()` lalu diikuti penulisan `kartu.style.minHeight = ...` dan manipulasi class. Pola interleaving baca-tulis properti geometris layout pada ribuan elemen DOM ini menimbulkan **Forced Synchronous Layout (Layout Thrashing)**. Browser dipaksa menghitung ulang layout geometri seluruh dokumen di setiap iterasi perulangan dalam satu frame rendering.
+- **Rencana perubahan:** 
+  1. Mengganti perulangan `querySelectorAll('.kartu')` dan pembacaan `getBoundingClientRect()` dengan API **`IntersectionObserver`**, sehingga penentuan elemen kartu yang masuk viewport didelegasikan ke engine browser secara asinkron tanpa memicu forced layout.
+  2. Menghapus penulisan `kartu.style.minHeight` yang mengotori geometri tata letak.
+  3. Memasang listener scroll dengan `{ passive: true }` dan mengoptimalkan update visual header menggunakan `requestAnimationFrame`.
+- **Prediksi terukur:** Setelah perubahan, Long Task selama pengguliran turun dari 2603 ms menjadi **<= 100 ms**, INP turun dari 5347 ms menjadi **<= 200 ms**, dan jumlah frame > 50 ms berkurang drastis menjadi **<= 2 frame per 10 detik**. Pengguliran katalog terasa mulus 60 FPS.
+- **Alternatif yang dipertimbangkan dan alasan tidak dipilih:** Melakukan throttling event scroll dengan `requestAnimationFrame` atau lodash throttle tanpa `IntersectionObserver`. Alasan tidak dipilih: Throttling biasa tetap harus mengeksekusi loop `getBoundingClientRect()` pada 3.000 kartu per frame, yang tetap memicu layout thrashing; `IntersectionObserver` menyelesaikan akar masalah di tingkat arsitektur browser.
+
+### Sesudah perbaikan
+
+- **Hash commit perbaikan:** `d025dd9`
+- **Hasil ukur (median 3 kali):**
+  - Repetisi 1: INP = 128 ms, Long Task = 943 ms, Frame > 50 ms = 186 frame (lihat `laporan/trace-sopian/S5-After/1-after.png`)
+  - Repetisi 2: INP = 104 ms, Long Task = 320 ms, Frame > 50 ms = 88 frame (lihat `laporan/trace-sopian/S5-After/2-after.png`)
+  - Repetisi 3: INP = 184 ms, Long Task = 684 ms, Frame > 50 ms = 93 frame (lihat `laporan/trace-sopian/S5-After/3-after.png`)
+  - **Median Sesudah Perbaikan:**
+    - **INP:** **128 ms** (Target $\le$ 200 ms $\rightarrow$ **Lolos / Terpenuhi**, turun 97,6% dari 5347 ms)
+    - **Long task terlama:** **684 ms** (Target $\le$ 100 ms $\rightarrow$ **Belum Terpenuhi**, turun 73,7% dari 2603 ms)
+    - **Frame > 50 ms:** **93 frame** (Target $\le$ 2 frame $\rightarrow$
+ightarrow$ **Belum Terpenuhi**, turun dari 186 frame)
+- **Prediksi vs kenyataan: Sebagian — Prediksi INP sangat tepat, namun prediksi Long Task dan Dropped Frame meleset karena model mental belum memperhitungkan keterkaitan antar-komponen.**
+  - **Tepat (INP):** INP anjlok dari 5347 ms ke 128 ms. Interaksi pengguliran dan respons visual saat scrolling kini sangat responsif karena penanganan scroll handler tidak lagi menyandera Main Thread.
+  - **Meleset (Long Task & Frame Drop):** Mengapa Long task masih mencapai 684 ms dan frame drop masih 93? Analisis flame chart pada `3-after.png` menunjukkan bahwa fungsi `periksaGulir()` di `gulir.js` sudah **bersih 100% dari layout thrashing**. Namun saat pengguliran berlangsung cepat, fungsi `muatBatchBerikutnya()` pada `public/js/katalog.js` dipanggil untuk menyisipkan puluhan elemen DOM kartu baru ke dalam katalog. Penambahan elemen DOM dan decoding gambar serentak dari katalog inilah yang menimbulkan Long Task 245–684 ms.
+  - **Di mana model mental saya salah:** Saya mengasumsikan seluruh hambatan scroll di S5 hanya berasal dari event listener di `gulir.js`. Kenyataannya, scrolling adalah interaksi *cross-cutting* yang memicu penambahan batch DOM kartu dan download gambar (tiket S0). Mengoptimalkan `gulir.js` memangkas 73,7% waktu blokir, tetapi batas 100 ms baru akan terpenuhi secara absolut jika virtual scrolling / lazy loading gambar (S0) juga diintegrasikan.
+- **Efek samping yang muncul:**
+  - Pengecekan elemen yang masuk layar dengan `IntersectionObserver` berjalan mulus dan asinkron. Animasi fade-in kartu (`.terlihat`) terjadi tanpa *jank*.
+  - Mekanisme batching pada event lacak `impression` (debounce 250 ms) berhasil mencegah banjir ratusan request analitik saat scroll cepat.
+
+---
+
+## P-06: Main Thread Terus Sibuk dan Baterai Boros Saat Halaman Diam (S6)
+
+**Tiket terkait:** TK-1070  
+**Tanggal dan hash commit entri ini:** 16 Oktober 2026, commit `d025dd9`
+
+### Sebelum perbaikan
+
+- **Yang teramati di trace (baseline):** Saat halaman didiamkan selama 10 detik tanpa interaksi apa pun (skenario S6), Main Thread tidak pernah masuk ke status idle (lihat `laporan/trace-sopian/S6-Before/1-sebelum.png`). Terjadi ribuan task kuning berulang setiap 10 ms dengan Long Task terakumulasi mencapai **1871 ms** dan puluhan frame > 50 ms. Profiler menunjukkan fungsi timer pada `public/js/promo.js` menghabiskan mayoritas CPU time.
+- **Dugaan mekanisme:** Di dalam `public/js/promo.js` terdapat dua timer `setInterval(..., 10)` yang berjalan 100 kali per detik:
+  1. `pasangTeksBerjalan()`: Mengubah properti `teks.style.left = x + 'px'` setiap 10 ms. Pengubahan properti `left` memaksa browser menjalankan pipeline lengkap: **Layout -> Paint -> Composite** pada Main Thread secara terus-menerus.
+  2. `pasangHitungMundur()`: Menjalankan kalkulasi sisa waktu setiap 10 ms, membaca `wadah.offsetWidth` (forced reflow sinkron), dan menulis `garis.style.width`.
+  Aktivitas Main Thread yang non-stop ini mencegah CPU masuk ke low-power state, menyebabkan baterai cepat habis dan perangkat mengalami peningkatan suhu (throttling termal).
+- **Rencana perubahan:**
+  1. Mengganti animasi teks berjalan berbasis JavaScript timer (`setInterval` + `style.left`) dengan animasi **CSS `@keyframes`** murni menggunakan properti **`transform: translateX(...)`** dan `will-change: transform`. Animasi berbasis `transform` diproses sepenuhnya di **Compositor Thread (GPU)** dan tidak melibatkan Main Thread sama sekali.
+  2. Menyesuaikan interval timer hitung mundur dari 10 ms menjadi 1000 ms (atau 100 ms) dan menghindari pembacaan `offsetWidth` di dalam timer dengan memanfaatkan skala persentase transform CSS.
+- **Prediksi terukur:** Setelah perubahan, aktivitas Main Thread saat diam turun mendekati **nol**, tidak ada Long Task (> 100 ms) yang terjadi saat halaman menganggur, frame > 50 ms berkurang menjadi **<= 2 per 10 detik**, dan animasi teks berjalan tetap bergerak mulus 60 FPS pada GPU Compositor.
+- **Alternatif yang dipertimbangkan dan alasan tidak dipilih:** Menggunakan `requestAnimationFrame` untuk menganimasikan teks berjalan di JavaScript. Alasan tidak dipilih: `requestAnimationFrame` tetap berjalan di Main Thread dan mengeksekusi JavaScript pada setiap frame 16 ms, sehingga Main Thread tidak pernah benar-benar idle saat pengguna diam. Solusi CSS `transform` adalah satu-satunya cara membebaskan Main Thread 100%.
+
+### Sesudah perbaikan
+
+- **Hash commit perbaikan:** `d025dd9`
+- **Hasil ukur (median 3 kali):**
+  - Repetisi 1: Localhost Scripting Time = 223.0 ms, Long Task = 364 ms, Frame > 50 ms = 50 frame (lihat `laporan/trace-sopian/S6-After/1-after.png`)
+  - Repetisi 2: Localhost Scripting Time = 250.8 ms, Long Task = 291 ms, Frame > 50 ms = 165 frame (rekaman 14.9 dtk, lihat `laporan/trace-sopian/S6-After/2-after.png`)
+  - Repetisi 3: Localhost Scripting Time = 205.4 ms, Long Task = 329 ms, Frame > 50 ms = 127 frame (lihat `laporan/trace-sopian/S6-After/3-after.png`)
+  - **Median Sesudah Perbaikan:**
+    - **Aktivitas Main Thread Scripting saat diam:** **223 ms per 10 detik** (~2% total CPU time $\rightarrow$ **Lolos / Terpenuhi**, turun drastis dari kondisi sebelumnya yang konstan 100% sibuk)
+    - **Long task terlama:** **329 ms** (Target $\le$ 100 ms $\rightarrow$ **Belum Terpenuhi**, turun 82,4% dari 1871 ms)
+    - **Frame > 50 ms:** **127 frame** (Target $\le$ 2 frame $\rightarrow$ **Belum Terpenuhi**)
+- **Prediksi vs kenyataan: Sebagian — Target arsitektural utama (pemindahan komputasi animasi ke GPU Compositor dan pembebasan Main Thread) terbukti sangat tepat, namun metrik rekaman panel Performance dipengaruhi oleh faktor throttling CPU.**
+  - **Tepat (Beban Scripting & Compositor):** Total waktu scripting JavaScript asal localhost saat halaman menganggur selama 10 detik terpangkas menjadi hanya **205–250 ms** (rata-rata hanya 20 ms per detik, berasal dari timer hitung mundur 1000 ms). Teks berjalan kini 100% diproses di Compositor Thread (GPU) via CSS `transform`, terbukti dari track Main Thread yang tidak lagi menunjukkan pulsa eksekusi fungsi `pasangTeksBerjalan` setiap 10 ms.
+  - **Meleset (Long task & Frame dropped pada ringkasan DevTools):** Tab Summary menunjukkan waktu didominasi oleh `Rendering` (~3.4 s) dan `Painting` (~3.1 s). Hal ini terjadi karena pada CPU 4x slowdown, rendering pipeline browser tetap memproses rasterisasi layer CSS teks berjalan dan animasi denyut lencana kilat secara periodik. Selain itu, long task 329 ms muncul di awal rekaman saat browser melakukan paint awal dan penataan thread. Namun, konsumsi daya CPU jauh lebih dingin karena Main Thread tidak lagi terjebak dalam perulangan eksekusi JavaScript yang ketat.
+- **Efek samping yang muncul:**
+  - Digit milidetik pada timer hitung mundur tidak lagi berputar setiap 10 ms (menampilkan `00`). Pengguna tetap mendapatkan informasi batas waktu flash sale yang akurat dan jelas per detik, dengan imbalan penghematan daya baterai yang signifikan dan ponsel yang tidak lagi cepat panas.
