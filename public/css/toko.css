@@ -47,9 +47,23 @@ button { cursor: pointer; }
 .angka span { font: italic 900 clamp(34px, 6vw, 64px)/1 var(--huruf-tegas); letter-spacing: -.04em; }
 .angka.kecil span { font-size: clamp(20px, 3vw, 30px); color: var(--nila-2); padding-top: .55em; }
 .angka small { font-size: 12px; font-weight: 600; }
-.hm-garis { position: absolute; left: 0; bottom: 0; height: 5px; background: var(--tinta); }
+.hm-garis { position: absolute; left: 0; bottom: 0; height: 5px; width: 100%; background: var(--tinta); transform-origin: left; transition: width .5s linear; }
 .berjalan { position: relative; height: 34px; background: var(--nila-2); color: var(--putih); overflow: hidden; }
-.berjalan-teks { position: absolute; top: 7px; left: 100%; white-space: nowrap; font-size: 14px; font-weight: 600; }
+.berjalan-teks {
+  position: absolute;
+  top: 7px;
+  left: 0;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 600;
+  will-change: transform;
+  animation: teksBerjalanAnimasi 35s linear infinite;
+}
+
+@keyframes teksBerjalanAnimasi {
+  0% { transform: translateX(100vw); }
+  100% { transform: translateX(-100%); }
+}
 
 /* ---------- area utama ---------- */
 .utama { max-width: 1320px; margin: 0 auto; padding: 16px; }
@@ -106,10 +120,10 @@ button { cursor: pointer; }
 .tombol-tambah.sudah { background: var(--hijau); border-color: var(--hijau); color: var(--putih); }
 .tombol-tambah:disabled { opacity: 0.85; cursor: not-allowed; }
 
-.lencana-kilat { position: absolute; top: 8px; left: 8px; z-index: 1; background: var(--kilat); color: var(--tinta); font-size: 11px; font-weight: 900; padding: 3px 8px; border-radius: 4px; animation: denyut .9s ease-in-out infinite; }
+.lencana-kilat { position: absolute; top: 8px; left: 8px; z-index: 1; background: var(--kilat); color: var(--tinta); font-size: 11px; font-weight: 900; padding: 3px 8px; border-radius: 4px; will-change: transform; animation: denyut .9s ease-in-out infinite; }
 @keyframes denyut {
-  0%, 100% { top: 8px; box-shadow: 0 0 0 0 rgba(255, 212, 0, .95); }
-  50% { top: 4px; box-shadow: 0 0 0 9px rgba(255, 212, 0, 0); }
+  0%, 100% { transform: translateY(0); box-shadow: 0 0 0 0 rgba(255, 212, 0, .95); }
+  50% { transform: translateY(-4px); box-shadow: 0 0 0 9px rgba(255, 212, 0, 0); }
 }
 
 .kosong { grid-column: 1 / -1; background: var(--putih); border: 1.5px dashed var(--garis); border-radius: 10px; padding: 28px; text-align: center; }
