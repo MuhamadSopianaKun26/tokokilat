@@ -76,8 +76,8 @@ Halaman flash sale TokoKilat mengalami dua kendala runtime kritis yang merusak p
 - **Perbaikan:**
   1. Mengubah animasi teks berjalan dari JavaScript timer (`setInterval` dengan `style.left`) menjadi animasi murni **CSS `@keyframes`** menggunakan properti **`transform: translateX(...)`** dan `will-change: transform`. Properti `transform` dijalankan sepenuhnya di **Compositor Thread (GPU)** sehingga Main Thread 100% bebas dari tugas menganimasikan teks berjalan.
   2. Melonggarkan timer hitung mundur dari 10 ms menjadi interval 1000 ms (atau 100 ms) dan mengeliminasi pembacaan layout sinkron `wadah.offsetWidth` di dalam timer dengan memanfaatkan persentase transform CSS.
-- **Trade-off:** Angka perseratus detik pada hitung mundur diperbarui per 100 ms alih-alih 10 ms, namun perubahan visualnya tetap tampak halus bagi mata manusia tanpa mengorbankan masa pakai baterai.
-- **Hasil:** Sebelum: Main Thread terus sibuk setiap 10 ms, Long task terlama = 1871 ms, frame > 50 ms > 50 frame. Sesudah: Aktivitas Main Thread mendekati nol saat diam, Long task = [ISI SETELAH PENGUKURAN] ms, animasi teks berjalan 100% di Compositor Thread.
+- **Trade-off:** Angka hitung mundur diperbarui per 1000 ms (1 detik) alih-alih 10 ms, mengeliminasi putaran digit milidetik yang tidak perlu. Kompromi ini sangat sepadan karena menghemat masa pakai baterai perangkat dan menjaga Main Thread tetap idle saat halaman diam.
+- **Hasil:** Sebelum: Main Thread terus sibuk setiap 10 ms, Long task terlama = 1871 ms, frame > 50 ms > 50 frame. Sesudah: Aktivitas Main Thread mendekati nol saat diam ([ISI SETELAH PENGUKURAN]), Long task = [ISI SETELAH PENGUKURAN] ms, frame > 50 ms = [ISI SETELAH PENGUKURAN].
 
 ---
 
