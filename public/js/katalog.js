@@ -16,7 +16,7 @@ export async function muatProduk() {
   return keadaan.semuaProduk;
 }
 
-function buatKartu(produk) {
+function buatKartu(produk, indeks) { // SKENARIO 0
   const kartu = el('article', 'kartu');
   kartu.dataset.id = produk.id;
 
@@ -27,6 +27,19 @@ function buatKartu(produk) {
   const gambar = document.createElement('img');
   gambar.src = produk.gambar;
   gambar.alt = produk.nama;
+  // Kunci rasio 1:1 (gambar sumber 480x480) supaya saat berkas gambar selesai
+  // dimuat belakangan (efek lazy) tinggi kartu tidak berubah -> tidak ada CLS baru.
+  gambar.width = 480;
+  gambar.height = 480;
+  gambar.decoding = 'async';
+  // Kartu di viewport awal dimuat segera; sisanya ditunda browser (native lazy loading)
+  // supaya hanya sedikit berkas gambar yang masuk antrean jaringan.
+  if (indeks < 6) {
+    gambar.loading = 'eager';
+    gambar.fetchPriority = 'high';
+  } else {
+    gambar.loading = 'lazy';
+  }
   media.append(gambar);
 
   const badan = el('div', 'kartu-badan');
@@ -88,8 +101,8 @@ export function renderProduk(daftar) {
     kisi.append(kosong);
   }
 
-  for (const produk of daftar) {
-    kisi.append(buatKartu(produk));
+  for (let i = 0; i < daftar.length; i++) { // SKENARIO 0
+    kisi.append(buatKartu(daftar[i], i));
   }
 
   samakanTinggiJudul();

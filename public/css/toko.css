@@ -70,9 +70,16 @@ button { cursor: pointer; }
 
 .ringkasan { margin: 0 0 12px; color: var(--abu); }
 
-.promo-banner { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; background: var(--nila); color: var(--putih); border-radius: 12px; padding: 22px 20px; margin-bottom: 16px; min-height: 132px; }
-.promo-banner h2 { margin: 0 0 4px; font: italic 900 22px/1.1 var(--huruf-tegas); }
-.promo-banner p { margin: 0; max-width: 60ch; }
+/* Slot promosi: ruang dicadangkan sejak frame pertama (tinggi = tinggi banner akhir),
+   supaya saat banner asinkron disisipkan tidak ada pergeseran tata letak (CLS). */
+.promo-slot { height: 132px; margin-bottom: 16px; border-radius: 12px; background: var(--kabut); border: 1.5px dashed var(--garis); }
+
+.promo-banner { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; background: var(--nila); color: var(--putih); border-radius: 12px; padding: 22px 20px; margin-bottom: 16px; height: 132px; overflow: hidden; }
+.promo-banner h2 { margin: 0 0 4px; font: italic 900 22px/1.1 var(--huruf-tegas); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.promo-banner p { margin: 0; max-width: 60ch; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
+/* Pada layar sempit banner membungkus (wrap) sehingga lebih tinggi; slot ikut menyesuaikan
+   agar tinggi skeleton tetap sama dengan tinggi banner akhir. */
+@media (max-width: 900px) { .promo-slot, .promo-banner { height: 236px; } }
 .promo-banner button { border: 0; border-radius: 8px; padding: 12px 18px; background: var(--kilat); color: var(--tinta); font-weight: 800; }
 
 /* ---------- kisi produk ---------- */

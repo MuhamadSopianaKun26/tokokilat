@@ -57,7 +57,10 @@ async function pasangBannerPromo() {
   });
   banner.append(teks, tombol);
 
-  $('#utama').prepend(banner);
+  // Isi slot yang ruangnya sudah dicadangkan, sehingga tinggi layout tidak berubah (mencegah LayoutShift saat banner asinkron muncul).
+  const slot = $('#promo-slot');
+  if (slot) slot.replaceWith(banner);
+  else $('#utama').prepend(banner);
 }
 
 export function pasangPromo() {
